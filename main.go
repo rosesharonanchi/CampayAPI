@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -20,13 +19,17 @@ import (
 var apiKey string
 
 func init() {
-	if err := godotenv.Load(); err != nil {
+	err := godotenv.Load() //load the .env file
+
+	if err != nil {
 		log.Fatalf("Error loading .env file: %v", err)
 	}
 
+	//Retrieve the api key from the .env file
 	apiKey = os.Getenv("API_KEY")
+
 	if apiKey == "" {
-		log.Fatalln("API_KEY not found. Make sure it is set in your .env file")
+		log.Fatalln("API_KEY  not found make sure it is set in your .env file")
 	}
 }
 
@@ -48,148 +51,139 @@ type CollectResponse struct {
 type TransactionStatusResponse struct {
 	Reference         string  `json:"reference"`
 	ExternalReference string  `json:"external_reference"`
-	Status            string  `json:"status"`
+	Status            string  `json:"status"` // PENDING, SUCCESSFUL, or FAILED
 	Amount            float64 `json:"amount"`
 	Currency          string  `json:"currency"`
 	Operator          string  `json:"operator"`
 	Code              string  `json:"code"`
 	OperatorReference string  `json:"operator_reference"`
 	Description       string  `json:"description"`
-	Reason            string  `json:"reason"`
+	Reason            string  `json:"reason"` // Will contain the failure reason if status is FAILED
 	PhoneNumber       string  `json:"phone_number"`
 	Endpoint          string  `json:"endpoint"`
 }
 
-func getUserInput(prompt string) string {
-	reader := bufio.NewReader(os.Stdin)
+func getUserInput(prompt string) (message string) {
+	//Getting input from the user
+	reader := bufio.NewReader(os.Stdin) // Create a new reader
 	fmt.Println(prompt)
 	input, err := reader.ReadString('\n')
+
 	if err != nil {
-		log.Fatalf("Error reading input: %v", err)
+		log.Fatalf("Error reading input: %v", err) // correct
+
 	}
-	return strings.TrimSpace(input)
-}
-
-func parseAmount(input string) (float64, error) {
-	value, err := strconv.ParseFloat(input, 64)
-	if err != nil || value <= 0 {
-		return 0, errors.New("invalid amount, must be a positive number")
-	}
-	return value, nil
-}
-
-func createPayment(payment Payment) (*CollectResponse, error) {
-	bodyBytes, err := json.Marshal(payment)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal payment: %v", err)
-	}
-
-	req, err := http.NewRequest("POST", "https://demo.campay.net/api/collect/", bytes.NewBuffer(bodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %v", err)
-	}
-
-	req.Header.Set("Authorization", "Token "+apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request error: %v", err)
-	}
-	defer resp.Body.Close()
-
-	responseData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %v", err)
-	}
-
-	var collectResp CollectResponse
-	if err := json.Unmarshal(responseData, &collectResp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %v", err)
-	}
-
-	if collectResp.ErrorCode != "" {
-		return nil, fmt.Errorf("API returned error: %s (%s)", collectResp.Message, collectResp.ErrorCode)
-	}
-
-	return &collectResp, nil
-}
-
-func pollTransaction(reference string) {
-	statusURL := fmt.Sprintf("https://demo.campay.net/api/transaction/%s/", reference)
-
-	client := &http.Client{}
-	maxRetries := 12
-	interval := 5 * time.Second
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			time.Sleep(interval)
-		}
-
-		req, err := http.NewRequest("GET", statusURL, nil)
-		if err != nil {
-			log.Printf("Error creating status request: %v", err)
-			continue
-		}
-
-		req.Header.Set("Authorization", "Token "+apiKey)
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Printf("Error sending status request: %v", err)
-			continue
-		}
-		defer resp.Body.Close()
-
-		statusData, err := io.ReadAll(resp.Body)
-		if err != nil {
-			log.Printf("Error reading status response: %v", err)
-			continue
-		}
-
-		var statusResp TransactionStatusResponse
-		if err := json.Unmarshal(statusData, &statusResp); err != nil {
-			log.Printf("Error parsing status response: %v", err)
-			continue
-		}
-
-		switch statusResp.Status {
-		case "SUCCESSFUL":
-			log.Printf("\n\n TRANSACTION SUCCESSFUL\nDetails: %+v\n", statusResp)
-			return
-		case "FAILED":
-			log.Fatalf("\n\n TRANSACTION FAILED\nReason: %s\n", statusResp.Reason)
-		}
-	}
-
-	log.Println("\nTRANSACTION FAILED: TIMED OUT")
+	message = strings.TrimSpace(input)
+	return message
 }
 
 func main() {
-	mobile := getUserInput("Enter your phone number (with country code):")
-	amountStr := getUserInput("Enter the amount to be debited:")
+
+	// calling the getUserInput function
+	mobileNumber := getUserInput("Enter your phone number (prefix with country code)")
+	amount := getUserInput("Enter the amount to be debited")
+	i, err := strconv.ParseFloat(amount, 64); if err != nil { log.Fatalf("Invalid amount: %v", err) } // correct line
 	desc := getUserInput("Enter a description:")
 
-	amount, err := parseAmount(amountStr)
-	if err != nil {
-		log.Fatalf("Invalid input: %v", err)
-	}
-
-	payment := Payment{
-		Amount:       amount,
-		MobileNumber: mobile,
+	payments := Payment{
+		Amount:       i,
+		MobileNumber: mobileNumber,
 		Currency:     "XAF",
 		Description:  desc,
 	}
 
-	collectResp, err := createPayment(payment)
+	postBody, _ := json.Marshal(payments) // for http transmission,
+	//Step 2: convert to a buffer
+	responseBody := bytes.NewBuffer(postBody)
+
+	// step 3: Post the response
+	req, err := http.NewRequest("POST", "https://demo.campay.net/api/collect/", responseBody)
+
 	if err != nil {
-		log.Fatalf("Payment initiation failed: %v", err)
+		log.Fatalf("The error is %v", err)
+	}
+	req.Header.Set("Authorization", "Token "+apiKey)
+	req.Header.Set("Content-Type", "application/json") //setting the authorization header
+
+	client := &http.Client{}  // Creating a new http client instance
+	resp, _ := client.Do(req) //Execute the http request
+
+	// step 4  Read the response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	sb := string(body)
+	log.Println(sb)
+
+	//Show Payment status
+
+	//Get the reference Id
+
+	var postResponse CollectResponse
+
+	var referenceID string
+
+	err = json.Unmarshal(body, &postResponse)
+
+	if postResponse.ErrorCode != "" { //This part is very important, ensures if any error with user inputs transaction fails and doest enter the polling loop
+		log.Fatalf("REQUEST FAILED at initiation: %s(Code: %s)", postResponse.Message, postResponse.ErrorCode)
 	}
 
-	log.Println("Payment request sent. Waiting for user confirmation...")
-	pollTransaction(collectResp.Reference)
+	if err != nil {
+		log.Fatalf("Error unmarshalling JSON: %v", err) // correct
+//log.Fatalf("Error unmashling JSON %v\n", err)
+		return
+	}
+
+	referenceID = postResponse.Reference
+
+	statusURL := fmt.Sprintf("https://demo.campay.net/api/transaction/%s/", referenceID)
+
+	//Polling
+	//Note: The transaction "status" changes over "time"
+	//We need to ensure that pending transactions after (a said amount of time in s) if not confirmed it is set to failed otherwise succesful.
+	maxRetries := 12
+	pollInterval := 5 * time.Second // time from pending to successful or failure must be atleast 5 sec
+
+	for j := 0; j < maxRetries; j++ {
+		if j > 0 {
+			time.Sleep(pollInterval)
+		}
+
+		// Creating the actual request
+		req, err = http.NewRequest("GET", statusURL, nil)
+
+		if err != nil {
+			log.Printf("Error creating status request %v", err)
+		}
+		req.Header.Set("Authorization", "Token "+apiKey)
+		req.Header.Set("Content-Type", "application/json")
+		statusResp, err := client.Do(req); if err != nil { log.Printf("Status request failed: %v", err); continue }
+// corrected
+		//statusResp, _ := client.Do(req)
+
+		// Reading the response
+		defer statusResp.Body.Close()
+		statusBody, _ := io.ReadAll(statusResp.Body)
+
+		var statusResponse TransactionStatusResponse
+
+		err = json.Unmarshal(statusBody, &statusResponse)
+		if err != nil {
+			log.Printf("Warning: Failed to unmarsh status response, retrying. %v", err)
+		}
+
+		currentStatus := statusResponse.Status
+		//log.Printf("Transaction status: %s", currentStatus)
+		if currentStatus == "SUCCESSFUL" {
+			log.Printf("\n\n TRANSACTION COMPLETED: SUCCESSFUL \n Details: %v", statusResponse)
+			return
+		} else if currentStatus == "FAILED" {
+			log.Fatalf("\n\n TRANSACTION FAILED \n Details: %v", statusResponse.Reason)
+		}
+
+	}
+	log.Print("	TRANSACTION FAILED, Timed Out")
+
 }
