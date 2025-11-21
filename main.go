@@ -70,7 +70,7 @@ func getUserInput(prompt string) (message string) {
 	input, err := reader.ReadString('\n')
 
 	if err != nil {
-		log.Fatalf("Error reading input", err)
+		log.Fatalf("Error reading input %v", err) //added %v for err
 	}
 	message = strings.TrimSpace(input)
 	return message
@@ -79,13 +79,26 @@ func getUserInput(prompt string) (message string) {
 func main() {
 
 	// calling the getUserInput function
-	mobileNumber := getUserInput("Enter your phone number (prefix with country code)")
+	mobileNumber := getUserInput("Enter your phone number(with country code 237):")
+
+	//phone number validator
+	if len(mobileNumber) != 12 || !isDigitsOnly(mobileNumber) {
+		log.Fatalln("Phone number must be exactly 9 digits")
+	}
+
 	amount := getUserInput("Enter the amount to be debited")
-	i, _ := strconv.ParseFloat(amount, 32)
+	i, err := strconv.ParseFloat(amount, 32)
+	if err != nil || i <= 0 {
+		log.Fatalf("Invalid amount: %v", err) // added validation for amount
+	}
+
 	desc := getUserInput("Enter a description:")
+	if desc == "" {
+		desc = "No description" // added default description if empty
+	}
 
 	payments := Payment{
-		Amount:       i,
+		Amount: i,
 		MobileNumber: mobileNumber,
 		Currency:     "XAF",
 		Description:  desc,
@@ -99,8 +112,9 @@ func main() {
 	req, err := http.NewRequest("POST", "https://demo.campay.net/api/collect/", responseBody)
 
 	if err != nil {
-		log.Fatalf("The error is %v", err)
+		log.Fatalf("Failed to create request: %v", err)
 	}
+
 	req.Header.Set("Authorization", "Token "+apiKey)
 	req.Header.Set("Content-Type", "application/json") //setting the authorization header
 
@@ -181,5 +195,15 @@ func main() {
 
 	}
 	log.Print("	TRANSACTION FAILED, Timed Out")
+	}
+
+	//Helper function to validat numeric only string
+	func isDigitsOnly(s string) bool {
+	for _, ch := range s {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+	return true
 
 }
