@@ -70,7 +70,8 @@ func getUserInput(prompt string) (message string) {
 	input, err := reader.ReadString('\n')
 
 	if err != nil {
-		log.Fatalf("Error reading input", err)
+		log.Fatalf("Error reading input: %v", err) // correct
+
 	}
 	message = strings.TrimSpace(input)
 	return message
@@ -81,7 +82,7 @@ func main() {
 	// calling the getUserInput function
 	mobileNumber := getUserInput("Enter your phone number (prefix with country code)")
 	amount := getUserInput("Enter the amount to be debited")
-	i, _ := strconv.ParseFloat(amount, 32)
+	i, err := strconv.ParseFloat(amount, 64); if err != nil { log.Fatalf("Invalid amount: %v", err) } // correct line
 	desc := getUserInput("Enter a description:")
 
 	payments := Payment{
@@ -130,7 +131,8 @@ func main() {
 	}
 
 	if err != nil {
-		log.Fatalf("Error unmashling JSON %v\n", err)
+		log.Fatalf("Error unmarshalling JSON: %v", err) // correct
+//log.Fatalf("Error unmashling JSON %v\n", err)
 		return
 	}
 
@@ -157,7 +159,9 @@ func main() {
 		}
 		req.Header.Set("Authorization", "Token "+apiKey)
 		req.Header.Set("Content-Type", "application/json")
-		statusResp, _ := client.Do(req)
+		statusResp, err := client.Do(req); if err != nil { log.Printf("Status request failed: %v", err); continue }
+// corrected
+		//statusResp, _ := client.Do(req)
 
 		// Reading the response
 		defer statusResp.Body.Close()
